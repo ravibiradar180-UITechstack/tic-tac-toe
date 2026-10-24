@@ -39,29 +39,45 @@ h1 {
 
 .board {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin: 24px 0;
+  grid-template-columns: repeat(3, 90px);
+  grid-template-rows: repeat(3, 90px);
+  gap: 8px;
+  justify-content: center;
+  margin: 24px auto;
 }
 
+/* Keep winning cells highlighted without hover changes */
+
+
 .cell {
-  aspect-ratio: 1;
-  border: 2px solid #e0e4ef;
-  border-radius: 12px;
-  background: #f8f9fd;
-  font-size: 2.8rem;
+  width: 90px;
+  height: 90px;
+  border: 2px solid #64748b;
+  border-radius: 10px;
+  background-color: #ffffff;
+  color: #1e293b;
+  font-size: 2rem;
   font-weight: 700;
   cursor: pointer;
-  transition: background 0.15s, transform 0.15s;
+  opacity: 1;
+  transition: background-color 0.2s ease,
+              border-color 0.2s ease,
+              transform 0.2s ease;
 }
 
 .cell:enabled:hover {
-  background: #e9edff;
-  transform: translateY(-2px);
+  background-color: #e0f2fe;
+  border-color: #0284c7;
+  transform: scale(1.04);
 }
 
 .cell-x {
   color: #4f46e5;
+}
+
+/* X and O should remain clearly visible */
+.cell:not(:empty) {
+  opacity: 1;
 }
 
 .cell-o {
@@ -69,7 +85,13 @@ h1 {
 }
 
 .cell:disabled {
-  cursor: not-allowed;
+  opacity: 1;
+  cursor: default;
+}
+.cell.winning-cell:hover {
+  background-color: #bbf7d0;
+  border-color: #16a34a;
+  transform: none;
 }
 
 .reset-button {

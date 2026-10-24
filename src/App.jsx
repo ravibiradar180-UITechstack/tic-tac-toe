@@ -1,13 +1,31 @@
 
 import { useState } from "react";
 import "./App.css";
-import { getWinner, isDraw, winningCombinations, findStrategicMove,
-  getComputerMove, getWinningCombination } from "./gameLogic";
 
+import {
+  getWinner,
+  getComputerMove,
+  getWinningCombination,
+} from "./gameLogic";
 
+// Creates a fresh board containing nine empty cells.
 const emptyBoard = () => Array(9).fill(null);
 
+// Pure function: returns a new board and updated move history.
+function applyMove(currentBoard, player, cellIndex, history) {
+  const nextBoard = [...currentBoard];
+  nextBoard[cellIndex] = player;
 
+  const nextHistory = [
+    ...history,
+    { player, cellIndex },
+  ];
+
+  return {
+    nextBoard,
+    nextHistory,
+  };
+}
 
 function App() {
   const [board, setBoard] = useState(emptyBoard);
@@ -20,31 +38,14 @@ function App() {
     draws: 0,
   });
 
-  const winningCells = getWinningCombination(board);
+  // Derived values: these are calculated from the current board.
   const winner = getWinner(board);
-  const isDraw = !winner && board.every(Boolean);
-  const gameOver = Boolean(winner) || isDraw;
+  const draw = !winner && board.every(Boolean);
+  const gameOver = Boolean(winner) || draw;
+  const winningCells = getWinningCombination(board);
 
-  
-function handleCellClick(index) {
-  if (board[index] || gameOver) {
-    return;
-  }
-
-  // Apply a move and record it in history.
-  function applyMove(currentBoard, player, cellIndex, history) {
-    const nextBoard = [...currentBoard];
-    nextBoard[cellIndex] = player;
-
-    const nextHistory = [
-      ...history,
-      { player, cellIndex },
-    ];
-
-    return { nextBoard, nextHistory };
-  }
-
-  // Record a completed game's result exactly once per move.
+  // Updates the scoreboard for a completed game.
+  // Returns true if the supplied board ends the game.
   function updateScore(nextBoard) {
     const nextWinner = getWinner(nextBoard);
     const nextDraw = !nextWinner && nextBoard.every(Boolean);
@@ -64,173 +65,170 @@ function handleCellClick(index) {
     return Boolean(nextWinner) || nextDraw;
   }
 
-  const humanMove = applyMove(board, currentPlayer, index, moveHistory);
-  setBoard(humanMove.nextBoard);
-  setMoveHistory(humanMove.nextHistory);
+  function handleCellClick(index) {
+    // Ignore occupied cells, completed games, and
+    // prevent human input during the computer's turn.
+    if (
+      board[index] ||
+      gameOver ||
+      (gameMode === "Computer" && currentPlayer !== "X")
+    ) {
+      return;
+    }
 
-  const humanGameOver = updateScore(humanMove.nextBoard);
+    // Apply the human move.
+    const humanMove = applyMove(
+      board,
+      currentPlayer,
+      index,
+      moveHistory
+    );
 
-  if (humanGameOver) {
-    return;
-  }
+    setBoard(humanMove.nextBoard);
+    setMoveHistory(humanMove.nextHistory);
 
-  // In two-player mode, alternate turns normally.
-  if (gameMode === "TwoPlayer") {
-    setCurrentPlayer(currentPlayer === "X" ? "O" : "X");
-    return;
-  }
+    // Stop if the human move completes the game.
+    if (updateScore(humanMove.nextBoard)) {
+      return;
+    }
 
-  // Computer mode: X is the human and O is the computer.
-  const computerIndex = getComputerMove(humanMove.nextBoard);
+    // Two-player mode: switch between X and O.
+    if (gameMode === "TwoPlayer") {
+      setCurrentPlayer(currentPlayer === "X" ? "O" : "X");
+      return;
+    }
 
-  if (computerIndex === -1) {
-    return;
-  }
+    // Computer mode: O is controlled by the computer.
+    const computerIndex = getComputerMove(humanMove.nextBoard);
 
-  const computerMove = applyMove(
-    humanMove.nextBoard,
-    "O",
-    computerIndex,
-    humanMove.nextHistory
-  );
+    if (computerIndex === -1) {
+      return;
+    }
 
-  setBoard(computerMove.nextBoard);
-  setMoveHistory(computerMove.nextHistory);
+    const computerMove = applyMove(
+      humanMove.nextBoard,
+      "O",
+      computerIndex,
+      humanMove.nextHistory
+    );
 
-  const computerGameOver = updateScore(computerMove.nextBoard);
+    setBoard(computerMove.nextBoard);
+    setMoveHistory(computerMove.nextHistory);
 
-  if (!computerGameOver) {
+    // Stop if the computer wins or draws.
+    if (updateScore(computerMove.nextBoard)) {
+      return;
+    }
+
+    // The human plays X again.
     setCurrentPlayer("X");
   }
-}
 
-  
-function findStrategicMove(board, player) {
-  for (const [a, b, c] of winningCombinations) {
-    const cells = [a, b, c];
-    const playerCells = cells.filter((index) => board[index] === player);
-    const emptyCells = cells.filter((index) => board[index] === null);
-
-    if (playerCells.length === 2 && emptyCells.length === 1) {
-      return emptyCells[0];
+  function undoMove() {
+    if (moveHistory.length === 0) {
+      return;
     }
+
+    // Remove the previous result from the scoreboard
+    // if undoing reopens a completed game.
+    if (winner) {
+      setScoreboard((previous) => ({
+        ...previous,
+        [winner]: Math.max(0, previous[winner] - 1),
+      }));
+    } else if (draw) {
+      setScoreboard((previous) => ({
+        ...previous,
+        draws: Math.max(0, previous.draws - 1),
+      }));
+    }
+
+    // Two-player mode removes one move.
+    // Computer mode removes up to the last two moves.
+    const movesToRemove =
+      gameMode === "Computer"
+        ? Math.min(2, moveHistory.length)
+        : 1;
+
+    const removedMoves = moveHistory.slice(-movesToRemove);
+    const remainingHistory = moveHistory.slice(0, -movesToRemove);
+
+    const updatedBoard = [...board];
+
+    for (const move of removedMoves) {
+      updatedBoard[move.cellIndex] = null;
+    }
+
+    setBoard(updatedBoard);
+    setMoveHistory(remainingHistory);
+
+    // Restore the turn to the earliest removed move's player.
+    setCurrentPlayer(removedMoves[0].player);
   }
-
-  return -1;
-}
-
-function getComputerMove(board) {
-  // Priority 1: Win if possible.
-  const winningMove = findStrategicMove(board, "O");
-  if (winningMove !== -1) return winningMove;
-
-  // Priority 2: Block X from winning.
-  const blockingMove = findStrategicMove(board, "X");
-  if (blockingMove !== -1) return blockingMove;
-
-  // Priority 3: Take the center.
-  if (board[4] === null) return 4;
-
-  // Priority 4: Take a corner.
-  const corners = [0, 2, 6, 8];
-  const availableCorner = corners.find((index) => board[index] === null);
-  if (availableCorner !== undefined) return availableCorner;
-
-  // Priority 5: Take any available cell.
-  return board.findIndex((cell) => cell === null);
-}
-
-  
-
-function undoMove() {
-  if (moveHistory.length === 0) {
-    return;
-  }
-
-  const previousWinner = getWinner(board);
-  const previousDraw = !previousWinner && board.every(Boolean);
-
-  // Reverse the result if this undo reopens a completed game.
-  if (previousWinner) {
-    setScoreboard((previous) => ({
-      ...previous,
-      [previousWinner]: Math.max(0, previous[previousWinner] - 1),
-    }));
-  } else if (previousDraw) {
-    setScoreboard((previous) => ({
-      ...previous,
-      draws: Math.max(0, previous.draws - 1),
-    }));
-  }
-
-  // In computer mode, undo the computer's response and
-  // the human move that triggered it.
-  const movesToRemove = gameMode === "Computer"
-    ? Math.min(2, moveHistory.length)
-    : 1;
-
-  const removedMoves = moveHistory.slice(-movesToRemove);
-  const remainingHistory = moveHistory.slice(0, -movesToRemove);
-
-  const updatedBoard = [...board];
-
-  for (const move of removedMoves) {
-    updatedBoard[move.cellIndex] = null;
-  }
-
-  setBoard(updatedBoard);
-  setMoveHistory(remainingHistory);
-
-  // The player who made the earliest removed move gets the turn back.
-  setCurrentPlayer(removedMoves[0].player);
-}
-
-
 
   function resetGame() {
     setBoard(emptyBoard());
     setCurrentPlayer("X");
     setMoveHistory([]);
+
+    // The scoreboard intentionally remains unchanged.
   }
 
   function resetScoreboard() {
-    setScoreboard({ X: 0, O: 0, draws: 0 });
+    setScoreboard({
+      X: 0,
+      O: 0,
+      draws: 0,
+    });
+  }
+
+  function handleModeChange(event) {
+    setGameMode(event.target.value);
+    resetGame();
+    resetScoreboard();
   }
 
   return (
     <main className="game-container">
       <h1>Tic-Tac-Toe</h1>
-      <div className="mode-selector">
-  <label htmlFor="game-mode">Game mode:</label>
 
-  <select
-    id="game-mode"
-    value={gameMode}
-    onChange={(event) => {
-      setGameMode(event.target.value);
-      resetGame();
-    }}
-  >
-    <option value="TwoPlayer">Two Players</option>
-    <option value="Computer">Play Against Computer</option>
-  </select>
-</div>
+      <div className="mode-selector">
+        <label htmlFor="game-mode">Game mode:</label>
+
+        <select
+          id="game-mode"
+          value={gameMode}
+          onChange={handleModeChange}
+        >
+          <option value="TwoPlayer">Two Players</option>
+          <option value="Computer">Play Against Computer</option>
+        </select>
+      </div>
+
       <p className="game-status" aria-live="polite">
         {winner
           ? `Player ${winner} wins!`
-          : isDraw
+          : draw
             ? "It's a draw!"
             : `Player ${currentPlayer}'s turn`}
       </p>
 
-      <div className="board" role="group" aria-label="Tic-Tac-Toe board">
+      <div
+        className="board"
+        role="group"
+        aria-label="Tic-Tac-Toe board"
+      >
         {board.map((cell, index) => (
           <button
             key={index}
             type="button"
-            className={`cell ${winningCells.includes(index) ? "winning-cell" : ""}`}
+            className={`cell ${
+              winningCells.includes(index) ? "winning-cell" : ""
+            }`}
             onClick={() => handleCellClick(index)}
-            aria-label={`Cell ${index + 1}${cell ? `, ${cell}` : ", empty"}`}
+            aria-label={`Cell ${index + 1}${
+              cell ? `, ${cell}` : ", empty"
+            }`}
             disabled={Boolean(cell) || gameOver}
           >
             {cell}
@@ -248,7 +246,11 @@ function undoMove() {
           Undo Move
         </button>
 
-        <button type="button" className="reset-button" onClick={resetGame}>
+        <button
+          type="button"
+          className="reset-button"
+          onClick={resetGame}
+        >
           Reset Game
         </button>
       </div>
